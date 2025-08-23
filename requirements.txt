@@ -1,3 +1,7 @@
 PyMuPDF
 python-docx
 spacy
+requests
+python-dotenv
+pandas
+openpyxl

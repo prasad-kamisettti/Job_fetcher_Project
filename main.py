@@ -1,92 +1,113 @@
-# main.py (Updated with NLP Keyword Extraction)
-import docx
-import fitz      # PyMuPDF
-import spacy     # NEW: Import spaCy
+# main.py (FINAL VERSION - With Excel Export)
+import os
+import pandas as pd
+import requests
+import time
+from dotenv import load_dotenv
 
-# --- NEW: Load the spaCy language model ---
-# We do this once at the start so it's ready to use.
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    print("Spacy model not found. Please run 'python -m spacy download en_core_web_sm'")
-    exit() # Exit the script if the model isn't downloaded
+# --- Part 1: SETUP ---
 
-def extract_text_from_pdf(pdf_path):
-    """Extracts all text from a given PDF file."""
-    text = ""
+load_dotenv()
+API_KEY = os.getenv("RAPIDAPI_KEY")
+
+if not API_KEY:
+    print("Error: RAPIDAPI_KEY not found in .env file.")
+    exit()
+
+# --- CONFIGURATION ---
+TARGET_JOB_TITLES = [
+    "Data Scientist", "Data Analyst", "AI Engineer", "Machine Learning Engineer",
+    "ML Engineer", "AI/ML Engineer", "NLP Engineer", "GenAI Engineer",
+    "Computer Vision Engineer", "Research Engineer AI/ML", "AI Solutions Engineer",
+    "Applied Scientist AI/ML", "AI Research Scientist", "Junior Data Engineer",
+    "Cloud Data Engineer", "Big Data Engineer", "Backend Developer Python SQL",
+    "MLOps Engineer"
+]
+# We will save the output file inside your 'Output' folder
+EXCEL_OUTPUT_FILE = "Output/found_jobs.xlsx"
+
+
+# --- Part 2: HELPER FUNCTIONS ---
+
+def load_existing_job_ids(file_path):
+    """Loads job IDs from an existing Excel file to prevent duplicates."""
+    if not os.path.exists(file_path):
+        return set()
     try:
-        with fitz.open(pdf_path) as doc:
-            for page in doc:
-                text += page.get_text()
-        return text
-    except FileNotFoundError:
-        return f"Error: The file '{pdf_path}' was not found."
-    except Exception as e:
-        print(f"An unexpected error occurred while reading the PDF.\nDETAILS: {e}")
-        return ""
+        df = pd.read_excel(file_path)
+        return set(df['Job ID'].tolist())
+    except (FileNotFoundError, KeyError):
+        return set()
 
-def extract_text_from_docx(docx_path):
-    """Extracts all text from a given DOCX file."""
+def save_jobs_to_excel(jobs_list, file_path):
+    """Creates or appends a list of jobs to an Excel file."""
+    if not jobs_list:
+        return
+        
+    # Define the columns we want in our Excel file and their order
+    columns = {
+        'job_id': 'Job ID', 'job_title': 'Title', 'employer_name': 'Company',
+        'job_city': 'City', 'job_state': 'State', 'job_apply_link': 'Application Link'
+    }
+    
+    new_jobs_df = pd.DataFrame(jobs_list)[list(columns.keys())].rename(columns=columns)
+
+    if os.path.exists(file_path):
+        # Append to existing file without writing the header again
+        with pd.ExcelWriter(file_path, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
+            existing_df = pd.read_excel(file_path)
+            new_jobs_df.to_excel(writer, startrow=len(existing_df) + 1, header=False, index=False)
+    else:
+        # Create a new file
+        # Ensure the 'Output' directory exists
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        new_jobs_df.to_excel(file_path, index=False)
+
+
+def find_jobs(query):
+    """Searches for jobs using the JSearch API."""
+    url = "https://jsearch.p.rapidapi.com/search"
+    headers = {"X-RapidAPI-Key": API_KEY, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
+    params = {"query": f"entry level to mid level {query} in USA", "num_pages": "1"}
+    
     try:
-        doc = docx.Document(docx_path)
-        all_paragraphs = [para.text for para in doc.paragraphs]
-        return "\n".join(all_paragraphs)
-    except FileNotFoundError:
-        return f"Error: The file '{docx_path}' was not found."
-    except Exception as e:
-        print(f"An unexpected error occurred while reading the DOCX.\nDETAILS: {e}")
-        return ""
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        return response.json().get('data', [])
+    except requests.exceptions.RequestException:
+        return []
 
-# --- NEW: Function to extract keywords using spaCy ---
-def extract_keywords(text):
-    """
-    Extracts key skills and technologies from the resume text.
-    """
-    # A set is used to automatically handle duplicates
-    keywords = set()
-    
-    # Process the entire text with spaCy
-    doc = nlp(text)
-    
-    # Iterate through the recognized entities in the text
-    # Entities are things like names, organizations, locations, etc.
-    # We will also look for nouns and proper nouns.
-    for token in doc:
-        # We're interested in Nouns (like 'python', 'analysis') 
-        # and Proper Nouns (like 'Amazon', 'SQL')
-        if token.pos_ in ['NOUN', 'PROPN']:
-            # Clean the token: lowercase and remove leading/trailing spaces
-            cleaned_token = token.text.strip().lower()
-            # Add to our set of keywords
-            keywords.add(cleaned_token)
-            
-    return list(keywords) # Convert the set back to a list
-
-# --- Main part of the script ---
+# --- Part 3: MAIN EXECUTION ---
 if __name__ == "__main__":
     
-    # --- CONFIGURATION ---
-    resume_filename = "Vara_Prasad-Resume.pdf"  # <--- MAKE SURE THIS IS CORRECT
+    # Load IDs of jobs we've already saved
+    existing_job_ids = load_existing_job_ids(EXCEL_OUTPUT_FILE)
+    print(f"Found {len(existing_job_ids)} jobs already in '{EXCEL_OUTPUT_FILE}'.")
     
-    print(f"--- Step 1: Reading Resume: {resume_filename} ---")
-    if resume_filename.endswith(".pdf"):
-        resume_text = extract_text_from_pdf(resume_filename)
-    elif resume_filename.endswith(".docx"):
-        resume_text = extract_text_from_docx(resume_filename)
-    else:
-        resume_text = ""
-        print("Error: Unsupported file type. Please use a .pdf or .docx file.")
+    new_jobs_to_save = []
 
-    if resume_text:
-        # print("\n--- RESUME TEXT EXTRACTED ---")
-        # print(resume_text) # We can comment this out to keep the output clean
+    print("\n--- Starting Targeted Job Search ---")
+    
+    for job_title in TARGET_JOB_TITLES:
+        print(f"Searching for: '{job_title}'...")
+        jobs_from_api = find_jobs(job_title)
         
-        print("\n--- Step 2: Extracting Keywords using NLP ---")
-        keywords = extract_keywords(resume_text)
+        for job in jobs_from_api:
+            job_id = job.get('job_id')
+            if job_id and job_id not in existing_job_ids:
+                new_jobs_to_save.append(job)
+                existing_job_ids.add(job_id) # Add to set to avoid duplicates within the same run
         
-        print("\n--- Found Keywords ---")
-        # Let's format them nicely in a comma-separated list
-        print(", ".join(keywords))
-        print("--- End of Keywords ---")
+        time.sleep(1) # Be polite to the API
+
+    # --- After all searches are complete, save and report results ---
+    if new_jobs_to_save:
+        print(f"\n--- Found {len(new_jobs_to_save)} new job openings! ---")
+        save_jobs_to_excel(new_jobs_to_save, EXCEL_OUTPUT_FILE)
+        print(f"All new jobs have been saved to '{EXCEL_OUTPUT_FILE}'")
+        
+        # Optionally print new jobs to console as well
+        for i, job in enumerate(new_jobs_to_save[:10], 1): # Print first 10 new jobs
+             print(f"  -> New job added: {job.get('job_title')} at {job.get('employer_name')}")
     else:
-        print("\nCould not read resume. Cannot proceed to keyword extraction.")
+        print(f"\n--- No new job openings found. Your list in '{EXCEL_OUTPUT_FILE}' is up to date. ---")
