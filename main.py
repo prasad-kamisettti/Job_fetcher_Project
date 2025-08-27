@@ -98,7 +98,7 @@ if __name__ == "__main__":
                 new_jobs_to_save.append(job)
                 existing_job_ids.add(job_id) # Add to set to avoid duplicates within the same run
         
-        time.sleep(1) # Be polite to the API
+        time.sleep(1) # Be polite to the API :)
 
     # --- After all searches are complete, save and report results ---
     if new_jobs_to_save:
