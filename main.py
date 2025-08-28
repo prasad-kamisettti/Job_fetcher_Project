@@ -156,7 +156,7 @@ def save_jobs_to_excel(jobs_list, file_path):
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         new_jobs_df.to_excel(file_path, index=False)
 
-# --- Part 4: API ---
+# --- API ---
 
 def find_jobs(query):
     """Searches for jobs using the JSearch API."""
@@ -211,7 +211,7 @@ if __name__ == "__main__":
                 else:
                     skipped_no_explicit += 1
 
-        time.sleep(1)  # be polite to the API
+        time.sleep(1)  # be polite to the API :)
 
     # --- Save and report ---
     if new_jobs_to_save:
